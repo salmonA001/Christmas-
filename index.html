@@ -802,24 +802,27 @@ function drawHud(t, letters, lights) {
 }
 
 // ---- Main loop ----
-let buildStart = performance.now();
+const buildStart = performance.now();
 let last = buildStart;
 let angle = 0;
 
-// The envelope under the given screen point, using last frame's letter grid.
+// The visible envelope nearest the given screen point, using last frame's letter grid.
 function envelopeAt(x, y) {
-  const col = Math.floor(x / cw), row = Math.floor(y / ch);
-  const REACH = 3;   // cells of slack so small letters are easy to tap
-  for (let dr = -REACH; dr <= REACH; dr++) {
-    for (let dc = -REACH; dc <= REACH; dc++) {
-      const r = row + dr, c = col + dc;
-      if (r < 0 || r >= rows || c < 0 || c >= cols) continue;
+  const REACH = 32;   // px — finger-sized, since letters can be only a few px wide
+  let best = null, bestDist = REACH;
+  const c0 = Math.max(0, Math.floor((x - REACH) / cw)), c1 = Math.min(cols - 1, Math.floor((x + REACH) / cw));
+  const r0 = Math.max(0, Math.floor((y - REACH) / ch)), r1 = Math.min(rows - 1, Math.floor((y + REACH) / ch));
+  for (let r = r0; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) {
       const i = win[r * cols + c];
-      const env = envelopes.find(e => i >= e.start && i < e.end);
-      if (env) return env;
+      if (i < STATIC_POINTS) continue;   // empty cell or part of the tree
+      const dist = Math.hypot((c + 0.5) * cw - x, (r + 0.5) * ch - y);
+      if (dist >= bestDist) continue;
+      best = envelopes.find(e => i >= e.start && i < e.end);
+      bestDist = dist;
     }
   }
-  return null;
+  return best;
 }
 
 const overlay = document.getElementById('overlay');
@@ -903,11 +906,15 @@ canvas.addEventListener('pointermove', e => {
   canvas.style.cursor = envelopeAt(e.clientX, e.clientY) ? 'pointer' : 'default';
 });
 
-// Click an envelope to read it; click anywhere else to replay the build.
+// Hold the tree still while a finger or mouse button is down, so a letter is easy to hit.
+let pressed = false;
+canvas.addEventListener('pointerdown', () => { pressed = true; });
+window.addEventListener('pointerup', () => { pressed = false; });
+window.addEventListener('pointercancel', () => { pressed = false; });
+
 canvas.addEventListener('click', e => {
   const env = envelopeAt(e.clientX, e.clientY);
   if (env) readWish(env.wish);
-  else buildStart = performance.now();
 });
 
 function frame(now) {
@@ -916,7 +923,7 @@ function frame(now) {
   const time = now / 1000;
   const t = (now - buildStart) / 1000;
 
-  angle += SPIN * dt;
+  if (!pressed) angle += SPIN * dt;
   const cosA = Math.cos(angle), sinA = Math.sin(angle);
 
   rasterize(t, cosA, sinA);
