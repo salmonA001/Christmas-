@@ -52,6 +52,9 @@ const PALETTE = {
   snow:      [240, 246, 255],
   red:       [225, 45, 60],
   light:     [255, 238, 175],
+  lightRed:  [255, 90, 90],
+  lightBlue: [110, 170, 255],
+  lightGreen:[120, 255, 140],
   giftRed:   [205, 40, 55],
   giftBlue:  [70, 120, 220],
   giftGreen: [40, 160, 95],
@@ -107,13 +110,20 @@ function addPoint(x, y, z, n, color, ramp, born, opts = {}) {
     twinkle: opts.twinkle || 0,
     phase: Math.random() * TAU,
     billboard: opts.billboard || false,
+    shiny: opts.shiny || false,
   });
+}
+
+const SPRITES = new Map();
+function spriteFor(color) {
+  if (!SPRITES.has(color)) SPRITES.set(color, makeSprite(PALETTE[color]));
+  return SPRITES.get(color);
 }
 
 function addGlow(x, y, z, color, size, alpha, born, opts = {}) {
   glows.push({
     x, y, z, size, alpha, born,
-    sprite: makeSprite(PALETTE[color]),
+    sprite: spriteFor(color),
     tolerance: opts.tolerance || 0.05,
     twinkle: opts.twinkle || 0,
     phase: Math.random() * TAU,
@@ -121,10 +131,22 @@ function addGlow(x, y, z, color, size, alpha, born, opts = {}) {
   });
 }
 
-// Tiered cone: each tier flares outward at its lower edge.
-function radiusAt(h) {
+function addSphere(cx, cy, cz, size, color, n, born, opts = {}) {
+  for (let i = 0; i < n; i++) {
+    const y = 1 - (i / (n - 1)) * 2;
+    const ring = Math.sqrt(1 - y * y);
+    const t = i * 2.39996;
+    const nx = Math.cos(t) * ring, nz = Math.sin(t) * ring;
+    addPoint(cx + nx * size, cy + y * size, cz + nz * size, [nx, y, nz], color, '+*%#@', born, opts);
+  }
+}
+
+// Tiered cone: each tier flares outward at its lower edge,
+// and the edge is lobed into branch tips around the trunk.
+function radiusAt(h, a) {
   const tier = (h * TIERS) % 1;
-  return RADIUS * h * (0.72 + 0.28 * tier);
+  const lobes = 1 + 0.07 * tier * Math.sin(a * 11 + Math.floor(h * TIERS) * 1.9);
+  return RADIUS * h * (0.72 + 0.28 * tier) * lobes;
 }
 
 function treeY(h) {
@@ -141,10 +163,10 @@ function buildTrunk() {
 }
 
 function buildNeedles() {
-  for (let i = 0; i < 28000; i++) {
+  for (let i = 0; i < 60000; i++) {
     const h = Math.sqrt(Math.random());
     const a = Math.random() * TAU;
-    const r = radiusAt(h) * (0.82 + 0.18 * Math.random());
+    const r = radiusAt(h, a) * (0.82 + 0.18 * Math.random());
     const color = Math.random() < 0.7 ? 'needle' : 'needleDk';
     const born = 1.5 + (1 - h) * 6.5 + Math.random() * 0.4;
     addPoint(Math.cos(a) * r, treeY(h), Math.sin(a) * r, [Math.cos(a), -0.45, Math.sin(a)], color, '.:*##%%', born);
@@ -153,11 +175,11 @@ function buildNeedles() {
 
 function buildGarland() {
   [0, Math.PI].forEach(offset => {
-    for (let i = 0; i < 900; i++) {
-      const s = i / 900;
+    for (let i = 0; i < 1800; i++) {
+      const s = i / 1800;
       const h = 0.06 + s * 0.9;
       const a = s * 5 * TAU + offset;
-      const r = radiusAt(h) + 0.02;
+      const r = radiusAt(h, a) + 0.02;
       addPoint(Math.cos(a) * r, treeY(h), Math.sin(a) * r, [Math.cos(a), -0.3, Math.sin(a)], 'gold', '-~', 7 + (1 - s) * 2);
     }
   });
@@ -165,48 +187,82 @@ function buildGarland() {
 
 function buildBranchSnow() {
   let placed = 0;
-  while (placed < 1200) {
+  while (placed < 2600) {
     const h = Math.sqrt(Math.random());
     if ((h * TIERS) % 1 < 0.6) continue;
     const a = Math.random() * TAU;
-    const r = radiusAt(h) * 1.01;
+    const r = radiusAt(h, a) * 1.01;
     addPoint(Math.cos(a) * r, treeY(h), Math.sin(a) * r, [Math.cos(a) * 0.5, -1, Math.sin(a) * 0.5], 'snow', '.:*', 9 + Math.random() * 2);
     placed++;
   }
 }
 
 function buildOrnaments() {
-  const colors = ['red', 'red', 'gold', 'silver'];
-  const N = 260;
-  for (let k = 0; k < 30; k++) {
+  const colors = ['red', 'red', 'gold', 'silver', 'giftBlue'];
+  for (let k = 0; k < 44; k++) {
     const h = 0.15 + Math.random() * 0.8;
     const a = Math.random() * TAU;
-    const cr = radiusAt(h) * 0.97;
+    const cr = radiusAt(h, a) * 0.97;
     const cx = Math.cos(a) * cr, cy = treeY(h), cz = Math.sin(a) * cr;
-    const size = 0.05 + Math.random() * 0.015;
+    const size = 0.045 + Math.random() * 0.02;
     const color = colors[k % colors.length];
-    const born = 9.5 + k * 0.08;
-    // Fibonacci sphere
-    for (let i = 0; i < N; i++) {
-      const y = 1 - (i / (N - 1)) * 2;
-      const ring = Math.sqrt(1 - y * y);
-      const t = i * 2.39996;
-      const nx = Math.cos(t) * ring, nz = Math.sin(t) * ring;
-      addPoint(cx + nx * size, cy + y * size, cz + nz * size, [nx, y, nz], color, '+*%#@', born);
-    }
-    addGlow(cx, cy, cz, color, size * 4, 0.45, born, { tolerance: size * 1.5 });
+    const born = 9.5 + k * 0.055;
+    addSphere(cx, cy, cz, size, color, 320, born, { shiny: true });
+    addSphere(cx, cy - size * 1.05, cz, size * 0.28, 'gold', 30, born);
+    addGlow(cx, cy, cz, color, size * 3.5, 0.3, born, { tolerance: size * 1.5 });
   }
 }
 
 function buildLights() {
-  for (let i = 0; i < 170; i++) {
+  const colors = ['light', 'light', 'light', 'lightRed', 'lightBlue', 'lightGreen', 'gold'];
+  for (let i = 0; i < 260; i++) {
     const h = 0.05 + Math.random() * 0.93;
     const a = Math.random() * TAU;
-    const r = radiusAt(h) * 1.03;
+    const r = radiusAt(h, a) * 1.03;
+    const color = colors[i % colors.length];
     const x = Math.cos(a) * r, y = treeY(h), z = Math.sin(a) * r;
     const born = 11 + Math.random() * 2;
-    addPoint(x, y, z, [Math.cos(a), -0.4, Math.sin(a)], 'light', 'o@', born, { twinkle: 0.6 });
-    addGlow(x, y, z, 'light', 0.07, 0.8, born, { twinkle: 0.6 });
+    addPoint(x, y, z, [Math.cos(a), -0.4, Math.sin(a)], color, 'o@', born, { twinkle: 0.6 });
+    addGlow(x, y, z, color, 0.055, 0.6, born, { twinkle: 0.6 });
+  }
+}
+
+// Red-and-white striped hooks hanging on the branches.
+function buildCandyCanes() {
+  for (let k = 0; k < 12; k++) {
+    const h = 0.25 + Math.random() * 0.7;
+    const a = Math.random() * TAU;
+    const r = radiusAt(h, a) * 1.02;
+    const ox = Math.cos(a), oz = Math.sin(a);   // outward
+    const tx = -oz, tz = ox;                    // tangent, for the hook's sideways curl
+    const top = treeY(h) - 0.05;
+    const born = 10 + k * 0.1;
+    const LEN = 0.09, HOOK = 0.025;
+    for (let s = 0; s < 1; s += 0.004) {
+      const along = s * (LEN + Math.PI * HOOK);
+      let dx, dy;
+      if (along < LEN) {
+        dx = 0; dy = LEN - along;               // straight stem, going up
+      } else {
+        const t = (along - LEN) / HOOK;         // half circle over the top
+        dx = HOOK - Math.cos(t) * HOOK; dy = -Math.sin(t) * HOOK;
+      }
+      const stripe = Math.floor(along / 0.012) % 2 ? 'red' : 'snow';
+      for (let j = 0; j < 3; j++) {
+        const jit = (Math.random() - 0.5) * 0.008;
+        addPoint(ox * r + tx * (dx + jit), top + dy, oz * r + tz * (dx + jit), [ox, -0.2, oz], stripe, '+*%#', born);
+      }
+    }
+  }
+}
+
+// Snow piled on the ground around the trunk.
+function buildSnowSkirt() {
+  for (let i = 0; i < 2500; i++) {
+    const a = Math.random() * TAU;
+    const r = 0.12 + Math.sqrt(Math.random()) * 0.7;
+    const y = GROUND - 0.035 * (1 - r) - Math.random() * 0.01;
+    addPoint(Math.cos(a) * r, y, Math.sin(a) * r, [Math.cos(a) * 0.3, -1, Math.sin(a) * 0.3], 'snow', ':*', 14 + Math.random());
   }
 }
 
@@ -270,6 +326,11 @@ function buildGifts() {
         paint(cx + w / 2, y, cz + u, [1, 0, 0]);
       }
     }
+    // Bow: two loops and a knot on the lid.
+    const loop = w * 0.16;
+    addSphere(cx - loop, top - loop * 0.7, cz, loop * 0.75, ribbon, 90, born + 0.2);
+    addSphere(cx + loop, top - loop * 0.7, cz, loop * 0.75, ribbon, 90, born + 0.2);
+    addSphere(cx, top - loop * 0.4, cz, loop * 0.45, ribbon, 40, born + 0.2);
   });
 }
 
@@ -278,8 +339,10 @@ buildNeedles();
 buildGarland();
 buildBranchSnow();
 buildOrnaments();
+buildCandyCanes();
 buildLights();
 buildStar();
+buildSnowSkirt();
 buildGifts();
 
 // ---- Sleigh pixel art (one letter per pixel) ----
@@ -350,7 +413,7 @@ function resize() {
   cx = W / 2;
   cy = (H - FOOTER) * 0.5;
 
-  font = Math.min(Math.max(Math.round(unit / 28), 6), 14);
+  font = Math.min(Math.max(Math.round(unit / 40), 4), 12);
   ctx.font = `${font}px ${MONO}`;
   cw = ctx.measureText('M').width;
   ch = Math.round(font * 1.15);
@@ -402,6 +465,8 @@ function rasterize(t, cosA, sinA) {
   }
 }
 
+const SNOW_PAL = palIndex('snow');
+
 function shadeCells(t, time, cosA, sinA) {
   buckets.forEach(b => (b.length = 0));
   let letters = 0;
@@ -417,9 +482,10 @@ function shadeCells(t, time, cosA, sinA) {
     let shade = Math.min(1, (0.3 + 0.8 * lambert) * depthFade);
     if (p.twinkle) shade *= 1 - p.twinkle * (0.5 + 0.5 * Math.sin(time * 4 + p.phase));
     if (t - p.born < 0.3) shade = 1; // freshly typed letters flash
-    const level = Math.min(LEVELS - 1, Math.floor(shade * LEVELS));
-    glyphOf[idx] = p.ramp[Math.min(p.ramp.length - 1, Math.floor(shade * p.ramp.length))];
-    buckets[p.pal * LEVELS + level].push(idx);
+    const glint = p.shiny && lambert > 0.93;
+    const level = glint ? LEVELS - 1 : Math.min(LEVELS - 1, Math.floor(shade * LEVELS));
+    glyphOf[idx] = glint ? '@' : p.ramp[Math.min(p.ramp.length - 1, Math.floor(shade * p.ramp.length))];
+    buckets[(glint ? SNOW_PAL : p.pal) * LEVELS + level].push(idx);
     letters++;
   }
   return letters;
