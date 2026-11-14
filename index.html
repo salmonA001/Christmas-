@@ -13,13 +13,116 @@
   }
   body {
     background: radial-gradient(ellipse at 50% 35%, #18223d 0%, #0a0f1f 45%, #04060d 85%);
-    cursor: pointer;
   }
   canvas { display: block; width: 100vw; height: 100vh; }
+
+  .mailbox {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 210, 110, .45);
+    background: rgba(13, 20, 39, .85);
+    color: #ffd978;
+    font: 600 14px 'DejaVu Sans Mono', Menlo, Consolas, monospace;
+    cursor: pointer;
+    box-shadow: 0 0 24px rgba(255, 190, 70, .2);
+  }
+  .mailbox:hover { background: rgba(25, 34, 60, .95); }
+  .mailbox .icon { font-size: 22px; line-height: 1; }
+  @media (max-width: 600px) {
+    .mailbox { padding: 10px; }
+    .mailbox .label { display: none; }
+  }
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgba(2, 4, 10, .6);
+    backdrop-filter: blur(3px);
+  }
+  .overlay[hidden], .card[hidden] { display: none; }
+  .card {
+    box-sizing: border-box;
+    width: min(420px, 100%);
+    padding: 20px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 210, 110, .35);
+    background: #0d1427;
+    color: #e8ecf7;
+    font-family: 'DejaVu Sans Mono', Menlo, Consolas, monospace;
+    box-shadow: 0 0 40px rgba(255, 190, 70, .15);
+  }
+  .card h2 { margin: 0 0 12px; font-size: 18px; font-weight: 600; color: #ffd978; }
+  .card textarea {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 10px;
+    resize: vertical;
+    border-radius: 8px;
+    border: 1px solid rgba(160, 180, 230, .3);
+    background: #060a16;
+    color: #f3f5fb;
+    font: 15px/1.5 'DejaVu Sans Mono', Menlo, Consolas, monospace;
+  }
+  .card textarea:focus { outline: 2px solid rgba(255, 210, 110, .6); outline-offset: 1px; }
+  .card .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .card button {
+    padding: 9px 14px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: #ffd36e;
+    color: #1a1306;
+    font: 600 14px 'DejaVu Sans Mono', Menlo, Consolas, monospace;
+    cursor: pointer;
+  }
+  .card button.ghost { background: transparent; color: #c9d2ea; border-color: rgba(160, 180, 230, .3); }
+  #wish-view-text { margin: 0 0 10px; font-size: 15px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+  #wish-view-date { margin: 0; font-size: 12px; color: rgba(200, 210, 235, .6); }
+
+  .flying {
+    position: fixed;
+    left: 0;
+    top: 0;
+    font-size: 56px;
+    pointer-events: none;
+    filter: drop-shadow(0 0 12px rgba(255, 220, 140, .8));
+  }
 </style>
 </head>
 <body>
 <canvas id="scene"></canvas>
+
+<button id="mailbox" class="mailbox" type="button" aria-label="Write a Christmas wish">
+  <span class="icon">📮</span><span class="label">Write a wish</span>
+</button>
+
+<div id="overlay" class="overlay" hidden>
+  <form id="wish-form" class="card" hidden>
+    <h2>📮 Dear Santa…</h2>
+    <textarea id="wish-text" rows="5" maxlength="280" placeholder="All I want for Christmas is…" required></textarea>
+    <div class="actions">
+      <button type="button" class="ghost" data-close>Cancel</button>
+      <button type="submit">Send ✉️</button>
+    </div>
+  </form>
+  <div id="wish-view" class="card" hidden>
+    <h2>✉️ A wish under the tree</h2>
+    <p id="wish-view-text"></p>
+    <p id="wish-view-date"></p>
+    <div class="actions">
+      <button type="button" class="ghost" id="wish-remove">Remove</button>
+      <button type="button" data-close>Close</button>
+    </div>
+  </div>
+</div>
 
 <script>
 const canvas = document.getElementById('scene');
@@ -50,6 +153,7 @@ const PALETTE = {
   gold:      [255, 205, 90],
   silver:    [215, 225, 240],
   snow:      [240, 246, 255],
+  paper:     [245, 235, 210],
   red:       [225, 45, 60],
   light:     [255, 238, 175],
   lightRed:  [255, 90, 90],
@@ -345,6 +449,52 @@ buildStar();
 buildSnowSkirt();
 buildGifts();
 
+// ---- Wishes: each one becomes an envelope standing under the tree ----
+const WISH_KEY = 'christmas-wishes';
+const wishes = JSON.parse(localStorage.getItem(WISH_KEY) || '[]');
+const STATIC_POINTS = points.length;
+const envelopes = [];   // { wish, start, end } — range of its points
+
+function saveWishes() {
+  localStorage.setItem(WISH_KEY, JSON.stringify(wishes));
+}
+
+// Spread envelopes around the base on the golden angle, in rings outside the gifts.
+function envelopeSpot(i) {
+  const a = 0.9 + i * 2.39996;
+  const r = 0.98 + 0.16 * Math.floor(i / 9);
+  return [Math.cos(a) * r, Math.sin(a) * r, a];
+}
+
+function buildEnvelope(wish, i) {
+  const [ex, ez, a] = envelopeSpot(i);
+  const ox = Math.cos(a), oz = Math.sin(a);   // faces outward
+  const tx = -oz, tz = ox;                    // runs along its width
+  const HALF_W = 0.12, HEIGHT = 0.16, STEP = 0.005;
+  const top = GROUND - HEIGHT;
+  const born = 17 + i * 0.15;
+  const start = points.length;
+  for (let u = -HALF_W; u <= HALF_W; u += STEP) {
+    for (let v = 0; v <= HEIGHT; v += STEP) {
+      const flapY = HEIGHT / 2 * (1 - Math.abs(u) / HALF_W);   // V-shaped flap
+      const seal = Math.hypot(u, v - HEIGHT / 2) < 0.022;
+      const flap = Math.abs(v - flapY) < 0.011;
+      const color = seal ? 'red' : flap ? 'gold' : 'paper';
+      const ramp = seal ? '@' : flap ? '*%' : ':=+#';
+      addPoint(ex + tx * u, top + v, ez + tz * u, [ox, -0.2, oz], color, ramp, born);
+    }
+  }
+  envelopes.push({ wish, start, end: points.length });
+}
+
+function rebuildEnvelopes() {
+  points.length = STATIC_POINTS;
+  envelopes.length = 0;
+  wishes.forEach(buildEnvelope);
+}
+
+rebuildEnvelopes();
+
 // ---- Sleigh pixel art (one letter per pixel) ----
 const SLEIGH_ART = [
   '..........rrrr........',
@@ -632,6 +782,7 @@ function drawHud(t, letters, lights) {
     `rotation ${((angle * 180 / Math.PI) % 360).toFixed(2)}°`,
     `letters ${letters.toLocaleString('en-US')}`,
     `lights ${lights}`,
+    `wishes ${wishes.length}`,
   ];
   ctx.fillStyle = 'rgba(200,210,235,0.6)';
   lines.forEach((line, i) => ctx.fillText(line, 16, 16 + i * (size + 3)));
@@ -642,7 +793,110 @@ let buildStart = performance.now();
 let last = buildStart;
 let angle = 0;
 
-canvas.addEventListener('click', () => { buildStart = performance.now(); });
+// The envelope under the given screen point, using last frame's letter grid.
+function envelopeAt(x, y) {
+  const col = Math.floor(x / cw), row = Math.floor(y / ch);
+  const REACH = 3;   // cells of slack so small letters are easy to tap
+  for (let dr = -REACH; dr <= REACH; dr++) {
+    for (let dc = -REACH; dc <= REACH; dc++) {
+      const r = row + dr, c = col + dc;
+      if (r < 0 || r >= rows || c < 0 || c >= cols) continue;
+      const i = win[r * cols + c];
+      const env = envelopes.find(e => i >= e.start && i < e.end);
+      if (env) return env;
+    }
+  }
+  return null;
+}
+
+const overlay = document.getElementById('overlay');
+const wishForm = document.getElementById('wish-form');
+const wishText = document.getElementById('wish-text');
+const wishView = document.getElementById('wish-view');
+let openWish = null;
+
+function showCard(card) {
+  wishForm.hidden = card !== wishForm;
+  wishView.hidden = card !== wishView;
+  overlay.hidden = false;
+}
+
+function closeOverlay() {
+  overlay.hidden = true;
+  openWish = null;
+}
+
+function readWish(wish) {
+  openWish = wish;
+  document.getElementById('wish-view-text').textContent = wish.text;
+  document.getElementById('wish-view-date').textContent =
+    `Sent ${new Date(wish.date).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}`;
+  showCard(wishView);
+}
+
+// A ✉️ pops up mid-screen and flies down to where the envelope will stand.
+function flyEnvelope(i, done) {
+  const [x, z] = envelopeSpot(i);
+  const c = Math.cos(angle), s = Math.sin(angle);
+  const rx = x * c - z * s, rz = x * s + z * c;
+  const persp = CAMERA / (CAMERA + rz);
+  const tx = cx + rx * persp * unit;
+  const ty = cy + (GROUND - 0.06) * persp * unit;
+  const el = document.createElement('div');
+  el.className = 'flying';
+  el.textContent = '✉️';
+  document.body.append(el);
+  const at = (px, py, scale) => `translate(${px}px, ${py}px) translate(-50%, -50%) scale(${scale})`;
+  el.animate([
+    { transform: at(W / 2, H / 2, 0.2), opacity: 0 },
+    { transform: at(W / 2, H / 2, 1.4), opacity: 1, offset: 0.25 },
+    { transform: at(tx, ty, 0.3), opacity: 1 },
+  ], { duration: 1800, easing: 'ease-in-out' }).onfinish = () => {
+    el.remove();
+    done();
+  };
+}
+
+document.getElementById('mailbox').addEventListener('click', () => {
+  wishText.value = '';
+  showCard(wishForm);
+  wishText.focus();
+});
+
+wishForm.addEventListener('submit', e => {
+  e.preventDefault();
+  const text = wishText.value.trim();
+  if (!text) return;
+  wishes.push({ text, date: new Date().toISOString() });
+  saveWishes();
+  closeOverlay();
+  flyEnvelope(wishes.length - 1, rebuildEnvelopes);
+});
+
+document.getElementById('wish-remove').addEventListener('click', () => {
+  wishes.splice(wishes.indexOf(openWish), 1);
+  saveWishes();
+  rebuildEnvelopes();
+  closeOverlay();
+});
+
+overlay.addEventListener('click', e => {
+  if (e.target === overlay || e.target.hasAttribute('data-close')) closeOverlay();
+});
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !overlay.hidden) closeOverlay();
+});
+
+canvas.addEventListener('pointermove', e => {
+  canvas.style.cursor = envelopeAt(e.clientX, e.clientY) ? 'pointer' : 'default';
+});
+
+// Click an envelope to read it; click anywhere else to replay the build.
+canvas.addEventListener('click', e => {
+  const env = envelopeAt(e.clientX, e.clientY);
+  if (env) readWish(env.wish);
+  else buildStart = performance.now();
+});
 
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.05);
