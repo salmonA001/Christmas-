@@ -105,14 +105,14 @@
 </button>
 
 <div id="overlay" class="overlay" hidden>
-  <form id="wish-form" class="card" hidden>
+  <div id="wish-form" class="card" hidden>
     <h2>📮 Dear Santa…</h2>
     <textarea id="wish-text" rows="5" maxlength="280" placeholder="All I want for Christmas is…" required></textarea>
     <div class="actions">
       <button type="button" class="ghost" data-close>Cancel</button>
-      <button type="submit">Send ✉️</button>
+      <button type="button" id="wish-send">Send ✉️</button>
     </div>
-  </form>
+  </div>
   <div id="wish-view" class="card" hidden>
     <h2>✉️ A wish under the tree</h2>
     <p id="wish-view-text"></p>
@@ -451,12 +451,25 @@ buildGifts();
 
 // ---- Wishes: each one becomes an envelope standing under the tree ----
 const WISH_KEY = 'christmas-wishes';
-const wishes = JSON.parse(localStorage.getItem(WISH_KEY) || '[]');
+// Storage is blocked in sandboxed viewers (e.g. in-app file previews); wishes then last for the visit only.
+function loadWishes() {
+  try {
+    return JSON.parse(localStorage.getItem(WISH_KEY) || '[]');
+  } catch (err) {
+    console.warn('Wishes will not be saved:', err.message);
+    return [];
+  }
+}
+const wishes = loadWishes();
 const STATIC_POINTS = points.length;
 const envelopes = [];   // { wish, start, end } — range of its points
 
 function saveWishes() {
-  localStorage.setItem(WISH_KEY, JSON.stringify(wishes));
+  try {
+    localStorage.setItem(WISH_KEY, JSON.stringify(wishes));
+  } catch (err) {
+    console.warn('Wishes will not be saved:', err.message);
+  }
 }
 
 // Spread envelopes around the base on the golden angle, in rings outside the gifts.
@@ -863,8 +876,7 @@ document.getElementById('mailbox').addEventListener('click', () => {
   wishText.focus();
 });
 
-wishForm.addEventListener('submit', e => {
-  e.preventDefault();
+document.getElementById('wish-send').addEventListener('click', () => {
   const text = wishText.value.trim();
   if (!text) return;
   wishes.push({ text, date: new Date().toISOString() });
