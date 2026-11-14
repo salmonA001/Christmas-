@@ -40,6 +40,7 @@ const LIGHT = normalize(-0.45, -0.55, -0.7);
 const SLEIGH_START = 16;
 const SLEIGH_PERIOD = 14;
 const SLEIGH_FLIGHT = 10;
+const FOOTER = 110;       // screen space kept free for the countdown
 
 // ---- Colors ----
 const PALETTE = {
@@ -345,9 +346,9 @@ function resize() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.textBaseline = 'top';
 
-  unit = Math.min(W * 0.4, H * 0.33);
+  unit = Math.min(W * 0.4, (H - FOOTER) * 0.33);
   cx = W / 2;
-  cy = H * 0.52;
+  cy = (H - FOOTER) * 0.5;
 
   font = Math.min(Math.max(Math.round(unit / 28), 6), 14);
   ctx.font = `${font}px ${MONO}`;
@@ -519,12 +520,38 @@ function drawSnow(dt, time) {
   ctx.globalAlpha = 1;
 }
 
-function daysUntilChristmas() {
+// Milliseconds until Dec 25 00:00 local time; 0 on Christmas Day.
+function msUntilChristmas() {
   const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (now.getMonth() === 11 && now.getDate() === 25) return 0;
   let xmas = new Date(now.getFullYear(), 11, 25);
-  if (today > xmas) xmas = new Date(now.getFullYear() + 1, 11, 25);
-  return Math.round((xmas - today) / 86400000);
+  if (now > xmas) xmas = new Date(now.getFullYear() + 1, 11, 25);
+  return xmas - now;
+}
+
+function drawCountdown() {
+  const ms = msUntilChristmas();
+  const total = Math.floor(ms / 1000);
+  const pad = n => String(n).padStart(2, '0');
+  const big = ms === 0
+    ? 'Merry Christmas!'
+    : `${Math.floor(total / 86400)}d ${pad(Math.floor(total / 3600) % 24)}h ${pad(Math.floor(total / 60) % 60)}m ${pad(total % 60)}s`;
+  const size = Math.round(Math.min(Math.max(W / 16, 20), 36));
+
+  ctx.textAlign = 'center';
+  ctx.save();
+  ctx.font = `bold ${size}px ${MONO}`;
+  ctx.fillStyle = 'rgb(255,220,120)';
+  ctx.shadowColor = 'rgba(255,190,70,0.8)';
+  ctx.shadowBlur = 16;
+  ctx.fillText(big, W / 2, H - size - 44);
+  ctx.restore();
+  if (ms > 0) {
+    ctx.font = `13px ${MONO}`;
+    ctx.fillStyle = 'rgba(220,228,245,0.75)';
+    ctx.fillText('until Christmas', W / 2, H - 36);
+  }
+  ctx.textAlign = 'left';
 }
 
 function drawHud(t, letters, lights) {
@@ -535,18 +562,13 @@ function drawHud(t, letters, lights) {
   ctx.fillText(`t ${t.toFixed(2)}s`, W - 16, 16);
   ctx.textAlign = 'left';
 
-  const days = daysUntilChristmas();
   const lines = [
-    days === 0 ? 'Merry Christmas!' : `${days} days until Christmas`,
     `rotation ${((angle * 180 / Math.PI) % 360).toFixed(2)}°`,
     `letters ${letters.toLocaleString('en-US')}`,
+    `lights ${lights}`,
   ];
   ctx.fillStyle = 'rgba(200,210,235,0.6)';
-  const y0 = H - lines.length * (size + 3) - 24;
-  lines.forEach((line, i) => ctx.fillText(line, 16, y0 + i * (size + 3)));
-  ctx.textAlign = 'center';
-  ctx.fillText(`lights ${lights}`, W / 2, y0 + (lines.length - 1) * (size + 3));
-  ctx.textAlign = 'left';
+  lines.forEach((line, i) => ctx.fillText(line, 16, 16 + i * (size + 3)));
 }
 
 // ---- Main loop ----
@@ -578,6 +600,7 @@ function frame(now) {
   drawSleigh(t);
   drawSnow(dt, time);
   drawHud(t, letters, lights);
+  drawCountdown();
   requestAnimationFrame(frame);
 }
 
