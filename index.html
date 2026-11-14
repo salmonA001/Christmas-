@@ -24,7 +24,6 @@
 <script>
 const canvas = document.getElementById('scene');
 const ctx = canvas.getContext('2d');
-const SOURCE = document.currentScript.textContent.trim();
 
 const MONO = "'DejaVu Sans Mono', Menlo, Consolas, monospace";
 const TAU = Math.PI * 2;
@@ -38,7 +37,6 @@ const TIERS = 7;
 const CAMERA = 3.4;
 const SPIN = 0.45;        // radians per second
 const LIGHT = normalize(-0.45, -0.55, -0.7);
-const TYPE_SPEED = 40;    // code panel characters per second
 const SLEIGH_START = 16;
 const SLEIGH_PERIOD = 14;
 const SLEIGH_FLIGHT = 10;
@@ -335,7 +333,7 @@ const SLEIGH_PIXELS = Object.entries(ART_COLORS).map(([key, color]) => {
 });
 
 // ---- Layout & buffers ----
-let W, H, sceneH, panelH, unit, font, cw, ch, cols, rows, cx, cy;
+let W, H, unit, font, cw, ch, cols, rows, cx, cy;
 let zbuf, win, glyphOf, levelOf, buckets, skyStars;
 
 function resize() {
@@ -347,18 +345,16 @@ function resize() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.textBaseline = 'top';
 
-  panelH = Math.round(Math.min(Math.max(H * 0.17, 110), 170));
-  sceneH = H - panelH;
-  unit = Math.min(W * 0.4, sceneH * 0.33);
+  unit = Math.min(W * 0.4, H * 0.33);
   cx = W / 2;
-  cy = sceneH * 0.52;
+  cy = H * 0.52;
 
   font = Math.min(Math.max(Math.round(unit / 28), 6), 14);
   ctx.font = `${font}px ${MONO}`;
   cw = ctx.measureText('M').width;
   ch = Math.round(font * 1.15);
   cols = Math.ceil(W / cw);
-  rows = Math.ceil(sceneH / ch);
+  rows = Math.ceil(H / ch);
 
   const n = cols * rows;
   zbuf = new Float32Array(n);
@@ -493,7 +489,7 @@ function drawBackdrop() {
   grad.addColorStop(0, 'rgba(110,130,200,0.12)');
   grad.addColorStop(1, 'rgba(110,130,200,0)');
   ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, W, sceneH);
+  ctx.fillRect(0, 0, W, H);
 }
 
 function drawSleigh(t) {
@@ -503,7 +499,7 @@ function drawSleigh(t) {
   const px = Math.min(Math.max(W / 160, 2.5), 6);
   const artW = SLEIGH_W * px;
   const x0 = -artW + u * (W + artW);
-  const y0 = sceneH * 0.2 + Math.sin(u * TAU * 2) * px * 3;
+  const y0 = H * 0.2 + Math.sin(u * TAU * 2) * px * 3;
   ctx.font = `${px * 1.6}px ${MONO}`;
   for (const { color, cells } of SLEIGH_PIXELS) {
     ctx.fillStyle = color;
@@ -518,7 +514,7 @@ function drawSnow(dt, time) {
     f.y += f.v * dt;
     if (f.y > 1) { f.y = 0; f.x = Math.random(); }
     ctx.globalAlpha = f.glyph === '*' ? 0.8 : 0.5;
-    ctx.fillText(f.glyph, f.x * W + Math.sin(time * 0.8 + f.drift) * 10, f.y * sceneH);
+    ctx.fillText(f.glyph, f.x * W + Math.sin(time * 0.8 + f.drift) * 10, f.y * H);
   }
   ctx.globalAlpha = 1;
 }
@@ -546,92 +542,23 @@ function drawHud(t, letters, lights) {
     `letters ${letters.toLocaleString('en-US')}`,
   ];
   ctx.fillStyle = 'rgba(200,210,235,0.6)';
-  const y0 = sceneH - lines.length * (size + 3) - 8;
+  const y0 = H - lines.length * (size + 3) - 24;
   lines.forEach((line, i) => ctx.fillText(line, 16, y0 + i * (size + 3)));
   ctx.textAlign = 'center';
   ctx.fillText(`lights ${lights}`, W / 2, y0 + (lines.length - 1) * (size + 3));
   ctx.textAlign = 'left';
 }
 
-const KEYWORDS = /^(const|let|for|of|return|function|if|else|new|while|continue)$/;
-const TOKEN = /(\/\/.*)|('[^']*'?)|(\d+(?:\.\d+)?)|([A-Za-z_$][\w$]*)|(\s+)|(.)/g;
-
-function tokenColor(tok) {
-  if (tok.startsWith('//')) return 'rgb(110,125,150)';
-  if (tok.startsWith("'")) return 'rgb(170,220,140)';
-  if (/^\d/.test(tok)) return 'rgb(255,170,100)';
-  if (KEYWORDS.test(tok)) return 'rgb(255,110,160)';
-  if (/^[A-Za-z_$]/.test(tok)) return 'rgb(210,220,240)';
-  return 'rgb(140,170,230)';
-}
-
-function drawPanel(t, fps) {
-  const top = sceneH;
-  ctx.fillStyle = 'rgba(6,9,16,0.9)';
-  ctx.fillRect(0, top, W, panelH);
-  ctx.fillStyle = 'rgba(120,140,190,0.25)';
-  ctx.fillRect(0, top, W, 1);
-
-  const size = 12;
-  const lh = size + 6;
-  ctx.font = `${size}px ${MONO}`;
-  const charW = ctx.measureText('M').width;
-
-  ctx.fillStyle = 'rgb(240,210,90)';
-  ctx.fillText('js', 16, top + 10);
-  ctx.fillStyle = 'rgba(200,210,235,0.75)';
-  ctx.fillText('tree.js', 16 + charW * 4, top + 10);
-  ctx.textAlign = 'right';
-  ctx.fillText(`typing · ${Math.round(fps)} fps`, W - 16, top + 10);
-  ctx.textAlign = 'left';
-
-  const typed = SOURCE.slice(0, Math.floor(t * TYPE_SPEED) % (SOURCE.length + 1));
-  const lines = typed.split('\n');
-  const visible = Math.floor((panelH - 34) / lh);
-  const first = Math.max(0, lines.length - visible);
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(0, top + 28, W, panelH - 28);
-  ctx.clip();
-  for (let i = first; i < lines.length; i++) {
-    const y = top + 30 + (i - first) * lh;
-    const current = i === lines.length - 1;
-    if (current) {
-      ctx.fillStyle = 'rgba(255,70,100,0.12)';
-      ctx.fillRect(0, y - 3, W, lh);
-    }
-    ctx.fillStyle = 'rgba(140,150,175,0.6)';
-    ctx.textAlign = 'right';
-    ctx.fillText(String(i + 1), 16 + charW * 3, y);
-    ctx.textAlign = 'left';
-
-    let x = 16 + charW * 5;
-    for (const [tok] of lines[i].matchAll(TOKEN)) {
-      ctx.fillStyle = tokenColor(tok);
-      ctx.fillText(tok, x, y);
-      x += tok.length * charW;
-    }
-    if (current) {
-      ctx.fillStyle = 'rgb(255,80,110)';
-      ctx.fillRect(x, y - 1, charW, size + 2);
-    }
-  }
-  ctx.restore();
-}
-
 // ---- Main loop ----
 let buildStart = performance.now();
 let last = buildStart;
 let angle = 0;
-let fps = 60;
 
 canvas.addEventListener('click', () => { buildStart = performance.now(); });
 
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.05);
   last = now;
-  fps = fps * 0.95 + (1 / Math.max(dt, 0.001)) * 0.05;
   const time = now / 1000;
   const t = (now - buildStart) / 1000;
 
@@ -651,7 +578,6 @@ function frame(now) {
   drawSleigh(t);
   drawSnow(dt, time);
   drawHud(t, letters, lights);
-  drawPanel(t, fps);
   requestAnimationFrame(frame);
 }
 
